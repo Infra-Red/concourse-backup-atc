@@ -1,0 +1,3 @@
+#!/bin/bash
+
+pg_dump -Fc atc -h ${PGHOST} -U ${PGUSER} > atc-backup/atc_db_$(date +"%Y%m%d%H%M").dump

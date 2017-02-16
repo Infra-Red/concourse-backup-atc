@@ -1,0 +1,64 @@
+resources:
+- name: concourse-backup-atc
+  type: git
+  source:
+    uri: {{concourse-backup-atc-uri}}
+    branch: {{concourse-backup-atc-branch}}
+- name: put-s3-backup
+  type: s3
+  source:
+    bucket: {{s3-bucket}}
+    access_key_id: {{s3-access-key-id}}
+    secret_access_key: {{s3-secret-access-key}}
+    region_name: {{s3-region-name}}
+    endpoint: {{s3-endpoint}}
+    regexp: atc_db_(.*).dump
+- name: failure-alert
+  type: slack-notification
+  source:
+    url: {{slack-url}}
+
+jobs:
+- name: create-backup-atc
+  max_in_flight: 1
+  plan:
+  - aggregate:
+    - get: concourse-backup-atc
+  - task: backup
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+        - repository: postgres
+        - tag: 9.3-alpine
+      inputs:
+      - name: concourse-backup-atc
+      outputs:
+      - name: atc-backup
+      run:
+        path: ./concourse-backup-atc/ci/tasks/create-backup
+        args: []
+      params:
+        PGPASSWORD: {{pg-password}}
+        PGUSER: {{pg-user}}
+        PGHOST: {{pg-host}}
+    on_failure:
+      put: failure-alert
+      params:
+        channel:  {{slack-channel}}
+        username: {{slack-username}}
+        icon_url: {{slack-icon}}
+        text: |
+          :x: FAILED to create ATC database backup
+          <$ATC_EXTERNAL_URL/teams/$BUILD_TEAM_NAME/pipelines/$BUILD_PIPELINE_NAME/jobs/$BUILD_JOB_NAME/builds/$BUILD_NAME|View build details>
+  - put: put-s3-backup
+    params:
+      file: atc-backup/atc_db_*.dump
+
+resource_types:
+- name: slack-notification
+  type: docker-image
+  source:
+    repository: cfcommunity/slack-notification-resource
+    tag: latest
