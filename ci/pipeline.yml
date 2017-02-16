@@ -17,6 +17,12 @@ resources:
   type: slack-notification
   source:
     url: {{slack-url}}
+- name: early-morning
+  type: time
+  source:
+    start: 6:00 AM
+    stop: 7:00 AM
+    location: {{time-location}}
 
 jobs:
 - name: create-backup-atc
@@ -24,6 +30,8 @@ jobs:
   plan:
   - aggregate:
     - get: concourse-backup-atc
+    - get: early-morning
+      trigger: true
   - task: backup
     config:
       platform: linux
@@ -55,6 +63,15 @@ jobs:
   - put: put-s3-backup
     params:
       file: atc-backup/atc_db_*.dump
+    on_failure:
+      put: failure-alert
+      params:
+        channel:  {{slack-channel}}
+        username: {{slack-username}}
+        icon_url: {{slack-icon}}
+        text: |
+          :x: FAILED to upload ATC database backup
+          <$ATC_EXTERNAL_URL/teams/$BUILD_TEAM_NAME/pipelines/$BUILD_PIPELINE_NAME/jobs/$BUILD_JOB_NAME/builds/$BUILD_NAME|View build details>
 
 resource_types:
 - name: slack-notification
